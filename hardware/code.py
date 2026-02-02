@@ -5,95 +5,95 @@ import wifi
 import ssl
 import socketpool
 import adafruit_requests
+import adafruit_ntp
+import rtc
 import displayio
 import terminalio
-from adafruit_display_text import label
+from adafruit_display_text import label, wrap_text_to_lines
 
-# --- Configuration ---
-# Ensure these match your Cloud Function URL
+# configuration
 URL = "https://us-central1-ucfeather.cloudfunctions.net/bq-trend-telltale"
+TZ_OFFSET = -5 
 
-# Google Brand Colors
-G_BLUE = 0x4285F4
-G_RED = 0xEA4335
-G_YELLOW = 0xFBBC05
-G_GREEN = 0x34A853
+# google brand color palette
+G_COLORS = [0x4285F4, 0xDB4437, 0xF4B400, 0x0F9D58]
 
-# --- Display Setup ---
+# display setup
 display = board.DISPLAY
-# The Reverse TFT is 240x135. We rotate if necessary, 
-# but default is usually correct for the 'Reverse' layout.
 main_group = displayio.Group()
 display.root_group = main_group
 
-# 1. Background (Black for high contrast)
+# white background
 bg_bitmap = displayio.Bitmap(display.width, display.height, 1)
 bg_palette = displayio.Palette(1)
-bg_palette[0] = 0x000000
+bg_palette[0] = 0xFFFFFF 
 main_group.append(displayio.TileGrid(bg_bitmap, pixel_shader=bg_palette))
 
-# 2. Header Label: "{DATE}'s Top Term:"
-header_label = label.Label(terminalio.FONT, text="", color=G_BLUE)
-header_label.anchor_point = (0.5, 0)
-header_label.anchored_position = (display.width // 2, 15)
-header_label.scale = 1
-main_group.append(header_label)
+# header group
+header_group = displayio.Group()
+header_group.x = 10
+header_group.y = 20
+main_group.append(header_group)
 
-# 3. Term Label: The actual BigQuery result
-term_label = label.Label(terminalio.FONT, text="LOADING...", color=G_YELLOW)
+# wrapping term label
+term_label = label.Label(terminalio.FONT, text="LOADING...", color=0x000000, scale=2)
 term_label.anchor_point = (0.5, 0.5)
-term_label.anchored_position = (display.width // 2, display.height // 2 + 15)
-term_label.scale = 2 # Initial scale
+term_label.anchored_position = (display.width // 2, display.height // 2 + 30)
+term_label.line_spacing = 1.2
 main_group.append(term_label)
 
-# --- Helper Functions ---
-def get_date_string():
-    """Returns a string like 'Feb 01'"""
-    t = time.localtime()
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    return f"{months[t.tm_mon-1]} {t.tm_mday:02d}"
+# functions
 
-def update_telltale(requests_session):
-    print("Updating...")
-    try:
-        # 1. Update Date Header
-        header_label.text = f"{get_date_string()}'s Top Term:"
+def create_google_header(text):
+    while len(header_group) > 0:
+        header_group.pop()
+    
+    current_x = 0
+    for i, char in enumerate(text):
+        char_color = G_COLORS[i % len(G_COLORS)]
         
-        # 2. Fetch from Cloud Function
-        with requests_session.get(URL) as response:
-            if response.status_code == 200:
-                term = response.text.strip().upper()
-                
-                # 3. Smart Scaling (Avoid text clipping)
-                if len(term) > 15:
-                    term_label.scale = 1
-                elif len(term) > 8:
-                    term_label.scale = 2
-                else:
-                    term_label.scale = 3
-                
-                term_label.text = term
-                # Change color every update for variety
-                term_label.color = [G_RED, G_YELLOW, G_GREEN][time.monotonic_ns() % 3]
-            else:
-                term_label.text = "HTTP ERR"
-                term_label.color = G_RED
-    except Exception as e:
-        print(f"Error: {e}")
-        term_label.text = "WIFI RECONNECTING"
-        term_label.color = G_RED
+        char_label = label.Label(terminalio.FONT, text=char, color=char_color, scale=2)
+        char_label.x = current_x
+        header_group.append(char_label)
+        
+        bold_shadow = label.Label(terminalio.FONT, text=char, color=char_color, scale=2)
+        bold_shadow.x = current_x + 1
+        header_group.append(bold_shadow)
+        
+        current_x += 13 if char != " " else 8
 
-# --- Network Initialization ---
-print("Connecting to WiFi...")
-wifi.radio.connect(os.getenv("WIFI_SSID"), os.getenv("WIFI_PASSWORD"))
-pool = socketpool.SocketPool(wifi.radio)
+def connect_and_sync():
+    ssid = os.getenv("WIFI_SSID")
+    pw = os.getenv("WIFI_PASSWORD")
+    try:
+        wifi.radio.connect(ssid, pw)
+    except:
+        wifi.radio.connect("RedRover")
+    pool = socketpool.SocketPool(wifi.radio)
+    ntp = adafruit_ntp.NTP(pool, tz_offset=TZ_OFFSET)
+    rtc.RTC().datetime = ntp.datetime
+    return pool
+
+def get_date_string():
+    yesterday_seconds = time.time() - 86400
+    t = time.localtime(yesterday_seconds)
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    return f"{months[t.tm_mon-1]} {t.tm_mday:02d}'s Top Term:"
+
+# main logic
+pool = connect_and_sync()
 requests = adafruit_requests.Session(pool, ssl.create_default_context())
 
-# --- Execution Loop ---
 while True:
-    update_telltale(requests)
-    
-    # Wait for 1 hour (3600 seconds)
-    # The display stays on while the chip 'sleeps' in this loop
+    if wifi.radio.connected:
+        create_google_header(get_date_string())
+        try:
+            with requests.get(URL) as response:
+                if response.status_code == 200:
+                    term = response.text.strip().upper()
+                    wrapped_text = "\n".join(wrap_text_to_lines(term, 18))
+                    term_label.text = wrapped_text
+                    term_label.color = G_COLORS[int(time.monotonic()) % 4]
+        except:
+            term_label.text = "ERROR"
     time.sleep(3600)
