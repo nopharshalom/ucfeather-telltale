@@ -42,5 +42,5 @@ Once the data reaches the device, it undergoes several layers of refinement to f
 
 ---
 
-## 🚀 Impact
+## Impact
 By transforming a massive, abstract cloud database into a tactile, color-coded object, the Google Trends Telltale successfully turns "big data" into a small, meaningful, and aesthetic addition to the physical world, reminding us that there is always a global conversation happening just outside our immediate view.
