@@ -2,6 +2,7 @@
 ### A Piece of "Calm Technology" for the Creative Workspace
 
 <img src="cad_mockup.png" width="50%" alt="CAD Mockup of display">
+
 *CAD mockup of the Top Terms Telltale.*
 
 ## Concept
@@ -33,6 +34,7 @@ Once the data reaches the device, it undergoes several layers of refinement to f
 
 ## Evolution of the Project
 <img src="mockup_environment.png" width="50%" alt="Mockup in CAD of the natural environment">
+
 *CAD mockup of the natural environment of the Top Terms Telltale.*
 
 | Iteration 1 | Final Iteration |
